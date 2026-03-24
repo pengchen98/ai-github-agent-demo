@@ -2,11 +2,14 @@ name: AI Code Review Agent
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ development ]
 
 permissions:
   contents: read
   pull-requests: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   ai-review:
