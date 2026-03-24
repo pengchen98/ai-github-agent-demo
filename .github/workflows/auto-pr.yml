@@ -1,0 +1,69 @@
+name: Auto PR from development to main
+
+on:
+  push:
+    branches: [ development ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: auto-pr-development-to-main
+  cancel-in-progress: true
+
+jobs:
+  create_pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 1) 跑你的质量门禁：单测/静态检查/安全扫描
+      - name: Run tests
+        run: |
+          echo "Run unit tests here"
+          # e.g. npm test / pytest / mvn test ...
+          # 如果失败直接退出，后续不会创建 PR
+
+      # 2) (可选) 让 AI 生成 PR 标题/描述（只生成文本）
+      - name: Generate PR title/body with Azure OpenAI
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+        run: |
+          python3 .github/scripts/gen_pr_text.py > pr_text.json
+
+      - name: Read PR text
+        id: prtext
+        run: |
+          TITLE=$(jq -r .title pr_text.json)
+          BODY=$(jq -r .body pr_text.json)
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # 3) 创建或更新 PR（避免重复创建）
+      - name: Create or update PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 查找是否已存在 development -> main 的 open PR
+          existing=$(gh pr list --base main --head development --state open --json number -q '.[0].number')
+
+          if [ -n "$existing" ]; then
+            echo "PR already exists: #$existing, updating title/body..."
+            gh pr edit "$existing" --title "${{ steps.prtext.outputs.title }}" --body "${{ steps.prtext.outputs.body }}"
+          else
+            echo "Creating new PR..."
+            gh pr create \
+              --base main \
+              --head development \
+              --title "${{ steps.prtext.outputs.title }}" \
+              --body "${{ steps.prtext.outputs.body }}"
+          fi
