@@ -52,22 +52,59 @@ jobs:
           echo "$BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # 3) 创建或更新 PR（避免重复创建）
-      - name: Create or update PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # 查找是否已存在 development -> main 的 open PR
-          existing=$(gh pr list --base main --head development --state open --json number -q '.[0].number')
-
-          if [ -n "$existing" ]; then
-            echo "PR already exists: #$existing, updating title/body..."
-            gh pr edit "$existing" --title "${{ steps.prtext.outputs.title }}" --body "${{ steps.prtext.outputs.body }}"
-          else
-            echo "Creating new PR..."
-            gh pr create \
-              --base main \
-              --head development \
-              --title "${{ steps.prtext.outputs.title }}" \
-              --body "${{ steps.prtext.outputs.body }}"
-          fi
+     
+          
+          - name: Create or update PR
+            env:
+              GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            shell: bash
+            run: |
+              set -euo pipefail
+          
+              # 查找是否已存在 development -> main 的 open PR
+              existing=$(gh pr list --base main --head development --state open --json number -q '.[0].number' || true)
+          
+              # 把 PR body 写入文件，避免 bash 把 Markdown 里的 `...` 当命令执行
+              cat > pr_body.md <<'EOF'
+              **简洁标题**
+              将 development 分支的文档更新和配置文件调整合入 main 分支
+          
+              **结构化描述**
+              - **变更摘要**
+                此 PR 包含以下更新：
+                1. README.md 文件的内容调整，包括修复拼写错误、添加描述以及测试相关信息的补充。
+                2. 更新 GitHub Actions 配置文件：
+                   - `.github/workflows/ai-agent.yml` 中的轻微调整。
+                   - `.github/workflows/auto-pr.yml` 中的轻微调整。
+                3. 将 GitHub Actions 的 checkout action 升级至 v5。
+          
+              - **影响范围**
+                - 文档更新对外部用户或开发者的理解可能产生轻微影响。
+                - GitHub Actions 配置文件的调整可能影响 CI/CD 流程的行为。
+          
+              - **风险点**
+                - GitHub Actions checkout action 升级至 v5 可能引入兼容性问题，需验证是否与现有工作流兼容。
+                - 配置文件的修改可能导致 CI/CD 流程异常，需确保工作流运行正常。
+          
+              - **回滚方案**
+                - 若发现问题，可回滚至合并前的 main 分支版本，并重新审查配置文件和文档更新内容。
+          
+              - **需要重点 review 的文件**
+                1. `.github/workflows/ai-agent.yml`
+                2. `.github/workflows/auto-pr.yml`
+                3. `README.md`
+              EOF
+          
+              if [[ -n "${existing:-}" ]]; then
+                echo "PR already exists: #$existing, updating title/body..."
+                gh pr edit "$existing" \
+                  --title "Auto PR: development -> main" \
+                  --body-file pr_body.md
+              else
+                echo "Creating new PR..."
+                gh pr create \
+                  --base main \
+                  --head development \
+                  --title "Auto PR: development -> main" \
+                  --body-file pr_body.md
+              fi
