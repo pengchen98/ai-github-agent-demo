@@ -12,6 +12,10 @@ concurrency:
   group: auto-pr-development-to-main
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+
 jobs:
   create_pr:
     runs-on: ubuntu-latest
